@@ -1,0 +1,71 @@
+##################### ANNOTATION OF PROTEING CODING SEQUENCES OF CANNABIS SATIVA (CS10) GENOME ASSEMBLY ##############################
+
+Description: This is an example Trinnotate annotation workflow to serve as a reference for the future use.
+
+Trinnotate was obtained here: https://github.com/Trinotate/Trinotate/releases
+Trinnotate manual can be found at this link: https://github.com/Trinotate/Trinotate.github.io/wiki
+
+Study: The genome assembly was reported in a following study:
+A complete Cannabis chromosome assembly and adaptive admixture for elevated cannabidiol (CBD) content
+Christopher J Grassa, Jonathan P Wenger, Clemon Dabney, Shane G Poplawski, S Timothy Motley, Todd P Michael, C J Schwartz, George D Weiblen
+doi: https://doi.org/10.1101/458083
+
+Source: link to the genome assembly and accompanying files: http://cannabisgenome.org/
+
+Annotation software: Trinnotate v.3.0.2 ttps://github.com/Trinotate/Trinotate.github.io/wiki
+
+#============== Annotation workflow ====================#
+
+1) Extract full length transcripts from CS10 genome based on cs10.protein_coding.2905.gff3
+   $ gffread -E cs10.protein_coding.2905.gff3 -o- > cs10_gffread.gff # Clean up original gff file and fix the issues
+   $ samtools faidx cs10.fasta # Index the genome assembly
+   $ gffread -w cs10_transcripts.fasta -g cs10.fasta cs10_gffread.gff # Get transcript sequences (36353 transcripts extracted)
+
+2) Detect ORFs with TransDecoder. Here we will also use blastp and hmmscan to
+   increase ORF detection sensitivity and specificity.
+   $ TransDecoder.LongOrfs -t cs10_transcripts/cs10_transcripts.fasta
+   $ blastp -query transdecoder_dir/longest_orfs.pep -db uniprot_sprot.fasta  -max_target_seqs 1 -outfmt 6 -evalue 1e-5 -num_threads 10 > blastp.outfmt6
+   $ hmmscan --cpu 4 --domtblout pfam.domtblout ~/programs/Trinotate-3.0.2/admin/Pfam-A.hmm cs10_transcripts.fasta.transdecoder_dir/longest_orfs.pe
+   # Important note! Transdecoder.Predict step failes with computationally predicted transcripts unless --no_refine_starts. 
+   # This failure is due to lack of 5'UTRs in computationally predicted transcripts, see https://github.com/TransDecoder/TransDecoder/issues/71
+   $ TransDecoder.Predict --no_refine_starts -t cs10_transcripts/cs10_transcripts.fasta --retain_pfam_hits pfam.domtblout --retain_blastp_hits blastp.outfmt6
+
+3) Initialize SQLite database
+   $ ~/programs/Trinotate-3.0.2/admin/Build_Trinotate_Boilerplate_SQLite_db.pl Trinnotate
+   # This will download a bunch of data as well.
+
+4) Search Uniprot for matches using blastx.
+   $ blastx -query cs10_transcripts/cs10_transcripts.fasta -db ~/programs/Trinotate-3.0.2/admin/uniprot_sprot.pep -num_threads 4 -max_target_seqs 1 -outfmt 6 > blastx.outfmt6
+
+5) Search transdecoder predicted proteins
+   $ blastp -query cs10_transcripts.fasta.transdecoder.pep -db ~/programs/Trinotate-3.0.2/admin/uniprot_sprot.pep -num_threads 4 -max_target_seqs 1 -outfmt 6 -evalue 1e-3 > blastp.outfmt6
+
+6) Identify protein domains with hmmscan
+   $ hmmscan --cpu 4 --domtblout TrinotatePFAM.out ~/programs/Trinotate-3.0.2/admin/Pfam-A.hmm cs10_transcripts.fasta.transdecoder.pep > pfam.log
+
+7) Identify signal peptide cleavage sites
+   $ signalp -f short -n signalp.out cs10_transcripts.fasta.transdecoder.pep
+
+8) Detect helical transmembrane domains
+   $ ~/programs/tmhmm-2.0c/bin/tmhmm --short cs10_transcripts.fasta.transdecoder.pep > tmhmm.out
+
+9) Load the results into sql database
+   $ ~/programs/Trinotate-3.0.2/Trinotate ~/Projects/cs10_trinnotate/Trinnotate.sqlite init --gene_trans_map gene2transcript.txt --transcript_fasta cs10_transcripts/cs10_transcripts.fasta --transdecoder_pep cs10_transcripts.fasta.transdecoder.pep # Load gene to transcript info into sqlite database
+   $ ~/programs/Trinotate-3.0.2/Trinotate ~/Projects/cs10_trinnotate/Trinnotate.sqlite LOAD_swissprot_blastp blastp.outfmt6 # Load protein hits
+   $  ~/programs/Trinotate-3.0.2/Trinotate ~/Projects/cs10_trinnotate/Trinnotate.sqlite LOAD_swissprot_blastx blastx.outfmt6 # Load transcript hits
+   $ ~/programs/Trinotate-3.0.2/Trinotate ~/Projects/cs10_trinnotate/Trinnotate.sqlite LOAD_pfam TrinotatePFAM.out # load PFAM domain entries
+   $ ~/programs/Trinotate-3.0.2/Trinotate ~/Projects/cs10_trinnotate/Trinnotate.sqlite LOAD_tmhmm tmhmm.out # load transmembrane domain predictions
+   $ ~/programs/Trinotate-3.0.2/Trinotate ~/Projects/cs10_trinnotate/Trinnotate.sqlite LOAD_signalp signalp.out # signal peptides cleavage prediction sites
+   $ ~/programs/Trinotate-3.0.2/Trinotate ~/Projects/cs10_trinnotate/Trinnotate.sqlite report -E 1e-3 > trinotate_annotation_report.xls # generate annotation report
+
+
+   
+   
+
+   
+   
+
+
+
+
+ 
